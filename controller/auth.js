@@ -4,13 +4,14 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 const { where } = require('sequelize');
+require('dotenv').config();
 
 
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    service: process.env.SMTP_SERVICE,
     auth: {
-        user: 'khaledghaly000@gmail.com',
-        pass: 'ldql dngy lknm jwru'
+        user: process.env.EMAIL_USERNAME,
+        pass: process.env.EMAIL_PASSWORD
     }
 })
 
@@ -34,7 +35,7 @@ exports.signup = async (req, res, next) => {
 
         // Setup email configurations
         const mailConfigurations = {
-            from: 'khaledghaly000@gmail.com',
+            from: process.env.EMAIL_USERNAME,
             to: email,
             subject: 'Your email verification',
             text: `Hi! There, You have recently visited 
