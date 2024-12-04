@@ -14,7 +14,11 @@ router.post('/resetPassword', authController.resetPassword);
 
 router.post('/verifyResetPass', authController.verifyResetPass);
 
-// router.post('/reqOtp', authController.reqOtp);//old version
+router.post('/resetEmail', authController.resetEmail);
+
+router.post('/verifyResetEmail', authController.verifyResetEmail);
+
+router.post('/reqOtp', authController.reqOtp);//old version
 // router.get('/verify/:token', authController.verify);//old version
 
 module.exports = router;

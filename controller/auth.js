@@ -228,19 +228,76 @@ exports.verifyResetPass = async(req, res, next) => {
         throw err;
     } 
 }
+
+exports.resetEmail = async (req, res, next) => {
+    try {
+        const { newEmail, email } = req.body;
+        if(!email || !newEmail) {
+            res.status(404).json({message: 'An email is required!'});
+            throw Error('An email is required');
+        }
+
+        const user = await User.findOne({where: {email: email}});
+        if(!user) {
+            res.status(404).json('user not found!');
+            throw Error('user not found')
+        }
+
+        user.email = newEmail;
+        user.isVerified = false;
+        await user.save();
+
+        const otp = generateOTP();
+        sendOtp(newEmail, otp);
+        otpCache[newEmail] = otp;
+        res.status(200).json({message: 'Otp sent successfully'});
+    } catch(err) {
+        throw err;
+    }
+}
+
+exports.verifyResetEmail = async(req, res, next) => {
+    try {
+        const { newEmail, otp } = req.body;
+
+        if(!otpCache.hasOwnProperty(newEmail)) {
+            return res.status(400).json({ message: 'No OTPs For this Email' });
+        }
+
+        if(otpCache[newEmail] === otp) {
+            delete otpCache[newEmail];
+            try {
+                const user = await User.findOne({where: {email: newEmail}});
+
+                if(!user) {
+                    return res.status(404).json({message: 'user not found'});
+                }
+
+                user.isVerified = true;
+                user.save();
+                res.status(200).json({message: `account's email changed successfully`});
+            }catch (err) {
+                throw err;
+            }
+        }
+    } catch(err) {
+        throw err;
+    } 
+}
+
+exports.reqOtp = async (req, res, next) => {
+    const { email } = req.body;
+    const otp = generateOTP();
+    otpCache[email] = otp;
+    console.log(otpCache)
+    
+    sendOtp(email, otp);
+    res.cookie('otpCache', otpCache, { maxAge: 300000, httpOnly: true });
+    res.status(200).json({ message: 'OTP sent successfully' });
+}
 ////////////////////////////////////////////////////////////////////////////
 // snap shoot of old verification
 
-// exports.reqOtp = async (req, res, next) => {
-//     const { email } = req.body;
-//     const otp = generateOTP();
-//     otpCache[email] = otp;
-//     console.log(otpCache)
-    
-//     sendOtp(email, otp);
-//     res.cookie('otpCache', otpCache, { maxAge: 300000, httpOnly: true });
-//     res.status(200).json({ message: 'OTP sent successfully' });
-// }
 
 // exports.verify = async (req, res, next) => {
 //     const token = req.params.token;
