@@ -74,6 +74,7 @@ exports.signup = async (req, res, next) => {
         };
 
         const otp = generateOTP();
+        otpCache[email] = otp;
         sendOtp(email, otp);
 
         await transporter.sendMail(mailConfigurations);
@@ -173,6 +174,60 @@ exports.verifyOtp = async (req, res, next) => {
     }
 }
 
+
+exports.resetPassword = async (req, res, next) => {
+    try {
+        const { email } = req.body;
+        if(!email) {
+            res.status(404).json({message: 'An email is required!'});
+            throw Error('An email is required');
+        }
+
+        const user = await User.findOne({where: {email: email}});
+        if(!user) {
+            res.status(404).json('user not found!');
+            throw Error('user not found')
+        }
+
+        const otp = generateOTP();
+        sendOtp(email, otp);
+        otpCache[email] = otp;
+        res.status(200).json({message: 'Otp sent successfully'});
+    } catch(err) {
+        throw err;
+    }
+}
+
+exports.verifyResetPass = async(req, res, next) => {
+    try {
+        const { email, otp, newPass } = req.body;
+
+        if(!otpCache.hasOwnProperty(email)) {
+            return res.status(400).json({ message: 'No OTPs For this Email' });
+        }
+
+        if(otpCache[email] === otp) {
+            delete otpCache[email];
+            try {
+                const user = await User.findOne({where: {email: email}});
+
+                if(!user) {
+                    return res.status(404).json({message: 'user not found'});
+                }
+
+                hashedPass = await bcrypt.hash(newPass, 12);
+                
+                const updatedUser = await User.update({password: hashedPass},{where: {email: email}})
+                console.log(updatedUser);
+                res.status(200).json({message: 'user updated succefully'});
+            }catch (err) {
+                throw err;
+            }
+        }
+    } catch(err) {
+        throw err;
+    } 
+}
 ////////////////////////////////////////////////////////////////////////////
 // snap shoot of old verification
 
