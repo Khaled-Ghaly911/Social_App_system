@@ -7,7 +7,10 @@ router.get('/verify/:token', authController.verify);
 
 router.post('/signup', authController.signup)
 
+router.post('/reqOtp', authController.reqOtp);
 
+router.post('/verifyOtp', authController.verifyOtp)
 
+router.post('/login', authController.login);
 
 module.exports = router;
