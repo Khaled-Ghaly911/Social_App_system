@@ -3,12 +3,51 @@ const { validationResult, Result } = require('express-validator');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
-const { where } = require('sequelize');
+const sequelize = require('sequelize');
 const randomString = require('randomstring');
 require('dotenv').config();
+const redis = require('redis');
+const redisClient = redis.createClient();
 
-//store email and its otp
-const otpCache = {};
+redisClient.on('connect', () => {
+    console.log('Connected to Redis');
+});
+
+redisClient.on('error', (err) => {
+    console.error('Redis error:', err);
+});
+
+redisClient.connect(); 
+
+async function storeOtp(email, otp) {
+    try {
+        await redisClient.setEx(email, 300, otp);
+        console.log(`OTP stored in Redis for ${email}`);
+    } catch (err) {
+        console.error('Error storing OTP in Redis:', err);
+        throw new Error('Failed to store OTP.');
+    }
+}
+
+async function retrieveOtp(email) {
+    try {
+        const otp = await redisClient.get(email);
+        return otp;
+    } catch (err) {
+        console.error('Error retrieving OTP from Redis:', err);
+        throw new Error('Failed to retrieve OTP.');
+    }
+}
+
+async function deleteOtp(email) {
+    try {
+        await redisClient.del(email);
+    } catch (err) {
+        console.error('Error deleting OTP from Redis:', err);
+        throw new Error('Failed to delete OTP.');
+    }
+}
+
 
 //generating OTP function
 function generateOTP() {
@@ -25,24 +64,20 @@ const transporter = nodemailer.createTransport({
     }
 })
 ///////////////////////////////////////////////////////functions
-function sendOtp(email, otp) {
+async function sendEmail(to, subject, text) {
     const mailOptions = {
         from: process.env.EMAIL_USERNAME,
         to: email,
-        subject: 'OTP Verification',
-        text: `Your OTP for verification is ${otp}`
+        subject: subject,
+        text: text
     }
-    
-    transporter.sendMail(mailOptions, (err, info) => {
-        if (err) {
-            console.log(err);
-            const error = new Error('Email sending failed');
-            throw error;
-        }
-        
-        console.log('your Email sent successfully');
-        console.log(info);
-    });
+    try{
+        await transporter.sendMail(mailOptions);
+        console.log(`Email sent successfully to ${to}`);
+    } catch (error) {
+        console.error(`Error sending email: ${error.message}`);
+        throw new Error('Email Sending Failed');
+    }    
 }
 /////////////////////////////////////////////////////
 
@@ -54,31 +89,16 @@ exports.signup = async (req, res, next) => {
     try {
         const hashedPass = await bcrypt.hash(password, 12);
         
-        
         const newUser = await User.create({
             email: email,
             name: name,
             password: hashedPass
         });
         
-        const token = jwt.sign({ email: email }, 'verificationCode', { expiresIn: '1h' });
-        
-        const mailConfigurations = {
-            from: process.env.EMAIL_USERNAME,
-            to: email,
-            subject: 'Your email verification',
-            text: `Hi! There, You have recently visited 
-            our website and entered your email.
-            you signup successfully we will send you email for otp
-            Thanks`
-        };
 
         const otp = generateOTP();
-        otpCache[email] = otp;
-        sendOtp(email, otp);
-
-        await transporter.sendMail(mailConfigurations);
-        console.log('Email sent successfully.');
+        await storeOtp(email, otp);
+        await sendEmail(email, `OTP Verification`, `Your OTP is : ${otp}`);
         
         res.status(201).json({
             message: 'User created successfully! Check your email for verification.',
@@ -87,14 +107,6 @@ exports.signup = async (req, res, next) => {
 
     } catch (err) {
         console.error(err);
-        
-        if (err instanceof jwt.JsonWebTokenError) {
-            return res.status(500).json({ message: 'Error generating JWT token.' });
-        }
-        if (err instanceof bcrypt.BcryptError) {
-            return res.status(500).json({ message: 'Error hashing the password.' });
-        }
-        
         res.status(500).json({ message: 'User creation failed' });
     }
 };
@@ -106,15 +118,15 @@ exports.login = async (req, res, next) => {
         const user = await User.findOne({ where: { email: email } });
         let isVerified = user.isVerified;
         if (!user) {
-            return res.status(404).json({ message: 'user not found' })
+            return res.status(404).json({ message: 'Invalid email or password.' })
         }
 
         if(!isVerified) {
-            return res.status(400).json({ message: 'your account is not verivied yet' });
+            return res.status(400).json({ message: 'Account is not verivied yet' });
         }
+
         const isAuthenticated = await bcrypt.compare(password, user.password);
         
-
         const token = jwt.sign({
             email: email,
             id: user.id,
@@ -122,125 +134,111 @@ exports.login = async (req, res, next) => {
 
         if (isAuthenticated) {
             return res.status(200).json({ 
-                message: 'Password is correct!',
+                message: 'Login successful!',
                 token: token
             });
         } else {
             return res.status(400).json({ message: 'password is incorrect!' });
         }
     } catch (err) {
-        throw err;
+        console.error(err);
+        res.status(500).json({message: `Login failed.`});
     }
-}
+};
 
 exports.verifyOtp = async (req, res, next) => {
     const { email, otp } = req.body;
 
     try {
-        console.log(otpCache);
-        if (!otpCache.hasOwnProperty(email)) {
-            return res.status(400).json({ message: 'No OTPs For this Email' });
+        const storedOtp = await retrieveOtp(email);
+
+        if (!storedOtp || storedOtp !== otp) {
+            return res.status(400).json({ message: 'Invalid or expired OTP.' });
         }
 
-        if (otpCache[email] === otp) {
-            delete otpCache[email];
-            try {
-                const user = await User.findOne({ where: { email: email } });
+        await deleteOtp(email);
+        
+        const user = await User.findOne({ where: { email: email } });
 
-                if (!user) {
-                    return res.status(404).json({ message: 'User not found.' });
-                }
-
-                if (user.isVerified) {
-                    return res.status(200).json({ message: 'Email is already verified.' });
-                }
-
-                user.isVerified = true;
-                await user.save();
-
-                console.log('User is verified!');
-                res.status(200).json({ message: 'User verified successfully.' });
-
-            } catch (err) {
-                console.log(err);
-                res.status(400).json({
-                    message: 'Email verification failed. The link may be invalid or expired.',
-                });
-            }
-            res.status(200).json({ message: 'Otp verified successfully!' })
+        if (!user) {
+            return res.status(404).json({ message: 'User not found.' });
         }
+
+        if (user.isVerified) {
+            return res.status(200).json({ message: 'Email is already verified.' });
+        }
+
+        user.isVerified = true;
+        await user.save();
+
+        console.log('User is verified!');
+        res.status(200).json({ message: 'Email verified successfully.' });        
     } catch (error) {
-        console.log(error);
+        console.error(error);
+        res.status(500).json({ message: 'Verification failed.'});
     }
 }
 
 
 exports.resetPassword = async (req, res, next) => {
-    try {
-        const { email } = req.body;
-        if(!email) {
-            res.status(404).json({message: 'An email is required!'});
-            throw Error('An email is required');
-        }
+    const { email } = req.body;
 
+    try {
         const user = await User.findOne({where: {email: email}});
+
         if(!user) {
             res.status(404).json('user not found!');
-            throw Error('user not found')
         }
 
         const otp = generateOTP();
-        sendOtp(email, otp);
-        otpCache[email] = otp;
-        res.status(200).json({message: 'Otp sent successfully'});
+        await storeOtp(email, otp);
+        sendEmail(email, 'Password Reset OTP', `your OTP is : ${otp}`);
+        res.status(200).json({message: 'OTP sent successfully.'});
     } catch(err) {
-        throw err;
+        console.error(err);
+        res.status(500).json({message: 'Failed to send reset OTP'});
     }
-}
+};
 
 exports.verifyResetPass = async(req, res, next) => {
+    const { email, otp, newPass } = req.body;
+    
     try {
-        const { email, otp, newPass } = req.body;
+        const storedOtp = await retrieveOtp(email);
+        if(!storeOtp || storedOtp !== otp) {
+            return res.status(400).json({ message: 'Invalid or expired otp.' });
+        }
+   
+        await deleteOtp(email);
+            
+        const user = await User.findOne({where: {email: email}});
+        
+        hashedPass = await bcrypt.hash(newPass, 12);
 
-        if(!otpCache.hasOwnProperty(email)) {
-            return res.status(400).json({ message: 'No OTPs For this Email' });
+        if(!user) {
+            return res.status(404).json({message: 'user not found'});
         }
 
-        if(otpCache[email] === otp) {
-            delete otpCache[email];
-            try {
-                const user = await User.findOne({where: {email: email}});
-
-                if(!user) {
-                    return res.status(404).json({message: 'user not found'});
-                }
-
-                hashedPass = await bcrypt.hash(newPass, 12);
                 
-                const updatedUser = await User.update({password: hashedPass},{where: {email: email}})
-                console.log(updatedUser);
-                res.status(200).json({message: 'user updated succefully'});
-            }catch (err) {
-                throw err;
-            }
-        }
+        await User.update({password: hashedPass},{where: {email: email}})
+        res.status(200).json({message: 'Password updated succefully'});
     } catch(err) {
-        throw err;
+        console.error(err);
+        res.status(500).json({message: 'password reset failed'});
     } 
 }
 
 exports.resetEmail = async (req, res, next) => {
+    const { newEmail, email } = req.body;
+
     try {
-        const { newEmail, email } = req.body;
         if(!email || !newEmail) {
-            res.status(404).json({message: 'An email is required!'});
-            throw Error('An email is required');
+            return res.status(404).json({message: 'Both current and new email addresses are required.'});
         }
 
         const user = await User.findOne({where: {email: email}});
         if(!user) {
             res.status(404).json('user not found!');
-            throw Error('user not found')
         }
 
         user.email = newEmail;
@@ -248,52 +246,56 @@ exports.resetEmail = async (req, res, next) => {
         await user.save();
 
         const otp = generateOTP();
-        sendOtp(newEmail, otp);
-        otpCache[newEmail] = otp;
-        res.status(200).json({message: 'Otp sent successfully'});
+        await storeOtp(newEmail, otp);
+
+        await sendEmail(newEmail, 'Email Reset Verification', `Your OTP is: ${otp}`)
+        res.status(200).json({message: 'OTP sent successfully'});
     } catch(err) {
-        throw err;
+        console.error(err);
+        res.status(500).json({message: 'Failed to reset email.'});
     }
 }
 
 exports.verifyResetEmail = async(req, res, next) => {
+    const { newEmail, otp } = req.body;
     try {
-        const { newEmail, otp } = req.body;
+        const storedOtp = await retrieveOtp(newEmail);
 
-        if(!otpCache.hasOwnProperty(newEmail)) {
-            return res.status(400).json({ message: 'No OTPs For this Email' });
+        if(!storedOtp || storedOtp !== otp) {
+            return res.status(400).json({ message: 'Invalid or expired OTP' });
         }
 
-        if(otpCache[newEmail] === otp) {
-            delete otpCache[newEmail];
-            try {
-                const user = await User.findOne({where: {email: newEmail}});
+        await deleteOtp(newEmail);
+        const user = await User.findOne({where: {email: newEmail}});
 
-                if(!user) {
-                    return res.status(404).json({message: 'user not found'});
-                }
-
-                user.isVerified = true;
-                user.save();
-                res.status(200).json({message: `account's email changed successfully`});
-            }catch (err) {
-                throw err;
-            }
+        if(!user) {
+            return res.status(404).json({message: 'user not found'});
         }
+
+        user.isVerified = true;
+        user.save();
+        res.status(200).json({message: `account's email changed successfully`});
+
     } catch(err) {
-        throw err;
+        console.error(err);
+        res.status(500).json({message: 'Failed to verify email reset.'});
     } 
 }
 
 exports.reqOtp = async (req, res, next) => {
     const { email } = req.body;
-    const otp = generateOTP();
-    otpCache[email] = otp;
-    console.log(otpCache)
-    
-    sendOtp(email, otp);
-    res.cookie('otpCache', otpCache, { maxAge: 300000, httpOnly: true });
-    res.status(200).json({ message: 'OTP sent successfully' });
+    try {
+        if (!email) {
+            return res.status(400).json({ message: 'Email is required to request OTP.' });
+        }
+        const otp = generateOTP();
+        await storeOtp(email);
+
+        await sendEmail(email, 'Your OTP Code', `Your OTP is: ${otp}`);
+        res.status(200).json({ message: 'OTP sent successfully' });
+    } catch(err) {
+        console.error(err);
+    }
 }
 ////////////////////////////////////////////////////////////////////////////
 // snap shoot of old verification
@@ -335,4 +337,8 @@ exports.reqOtp = async (req, res, next) => {
 //     };
 // };
 
-
+// to be used :)
+// const errors = validationResult(req);
+// if(!errors.isEmpty()) {
+//     return res.status(400).json({errors: errors.array()});
+// }
