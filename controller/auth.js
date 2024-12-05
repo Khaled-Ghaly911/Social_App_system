@@ -85,7 +85,10 @@ async function sendEmail(to, subject, text) {
 //////////////////////////////////////////////////routesLogic
 exports.signup = async (req, res, next) => {
     const { email, name, password } = req.body;
-    
+    const errors = validationResult(req);
+    if(!errors.isEmpty()) {
+        return res.status(400).json({errors: errors.array()});
+    }
     try {
         const hashedPass = await bcrypt.hash(password, 12);
         
@@ -113,6 +116,11 @@ exports.signup = async (req, res, next) => {
 
 exports.login = async (req, res, next) => {
     const { email, password } = req.body;
+
+    const errors = validationResult(req);
+    if(!errors.isEmpty()) {
+        return res.status(400).json({errors: errors.array()});
+    }
 
     try {
         const user = await User.findOne({ where: { email: email } });
@@ -149,6 +157,11 @@ exports.login = async (req, res, next) => {
 exports.verifyOtp = async (req, res, next) => {
     const { email, otp } = req.body;
 
+    const errors = validationResult(req);
+    if(!errors.isEmpty()) {
+        return res.status(400).json({errors: errors.array()});
+    }
+
     try {
         const storedOtp = await retrieveOtp(email);
 
@@ -183,6 +196,11 @@ exports.verifyOtp = async (req, res, next) => {
 exports.resetPassword = async (req, res, next) => {
     const { email } = req.body;
 
+    const errors = validationResult(req);
+    if(!errors.isEmpty()) {
+        return res.status(400).json({errors: errors.array()});
+    }
+
     try {
         const user = await User.findOne({where: {email: email}});
 
@@ -203,6 +221,11 @@ exports.resetPassword = async (req, res, next) => {
 exports.verifyResetPass = async(req, res, next) => {
     const { email, otp, newPass } = req.body;
     
+    const errors = validationResult(req);
+    if(!errors.isEmpty()) {
+        return res.status(400).json({errors: errors.array()});
+    }
+
     try {
         const storedOtp = await retrieveOtp(email);
         if(!storeOtp || storedOtp !== otp) {
@@ -231,6 +254,11 @@ exports.verifyResetPass = async(req, res, next) => {
 exports.resetEmail = async (req, res, next) => {
     const { newEmail, email } = req.body;
 
+    const errors = validationResult(req);
+    if(!errors.isEmpty()) {
+        return res.status(400).json({errors: errors.array()});
+    }
+
     try {
         if(!email || !newEmail) {
             return res.status(404).json({message: 'Both current and new email addresses are required.'});
@@ -258,6 +286,12 @@ exports.resetEmail = async (req, res, next) => {
 
 exports.verifyResetEmail = async(req, res, next) => {
     const { newEmail, otp } = req.body;
+
+    const errors = validationResult(req);
+    if(!errors.isEmpty()) {
+        return res.status(400).json({errors: errors.array()});
+    }
+
     try {
         const storedOtp = await retrieveOtp(newEmail);
 
@@ -284,6 +318,12 @@ exports.verifyResetEmail = async(req, res, next) => {
 
 exports.reqOtp = async (req, res, next) => {
     const { email } = req.body;
+
+    const errors = validationResult(req);
+    if(!errors.isEmpty()) {
+        return res.status(400).json({errors: errors.array()});
+    }
+    
     try {
         if (!email) {
             return res.status(400).json({ message: 'Email is required to request OTP.' });
@@ -337,7 +377,7 @@ exports.reqOtp = async (req, res, next) => {
 //     };
 // };
 
-// to be used :)
+// to be used:)
 // const errors = validationResult(req);
 // if(!errors.isEmpty()) {
 //     return res.status(400).json({errors: errors.array()});
