@@ -7,7 +7,10 @@ const sequelize = require('sequelize');
 const randomString = require('randomstring');
 require('dotenv').config();
 const redis = require('redis');
-const redisClient = redis.createClient();
+const redisClient = redis.createClient({
+    host: '127.0.0.1',
+    port: 6379
+});
 
 redisClient.on('connect', () => {
     console.log('Connected to Redis');
@@ -67,7 +70,7 @@ const transporter = nodemailer.createTransport({
 async function sendEmail(to, subject, text) {
     const mailOptions = {
         from: process.env.EMAIL_USERNAME,
-        to: email,
+        to: to,
         subject: subject,
         text: text
     }
@@ -92,16 +95,17 @@ exports.signup = async (req, res, next) => {
     try {
         const hashedPass = await bcrypt.hash(password, 12);
         
+        const otp = generateOTP();
+        await storeOtp(email, otp);
+
         const newUser = await User.create({
             email: email,
             name: name,
             password: hashedPass
         });
         
-
-        const otp = generateOTP();
-        await storeOtp(email, otp);
         await sendEmail(email, `OTP Verification`, `Your OTP is : ${otp}`);
+
         
         res.status(201).json({
             message: 'User created successfully! Check your email for verification.',
@@ -110,6 +114,7 @@ exports.signup = async (req, res, next) => {
 
     } catch (err) {
         console.error(err);
+        await deleteOtp(email);
         res.status(500).json({ message: 'User creation failed' });
     }
 };

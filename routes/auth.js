@@ -3,7 +3,6 @@ const router = express.Router();
 const authController = require('../controller/auth');
 const { body } = require('express-validator');
 const rateLimiter = require('express-rate-limit');
-const { body } = require('express-validator');
 
 const otpRateLimiter = rateLimiter({
     windowMs: 15 * 60 * 1000,
