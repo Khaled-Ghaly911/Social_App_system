@@ -1,33 +1,25 @@
 const { Sequelize, DataTypes } = require('sequelize');
-
 const sequelize = require('../util/database');
 
-const User = sequelize.define(
-    'user', {
+const Comment = sequelize.define('comment', {
     id: {
         type: DataTypes.INTEGER,
         allowNull: false,
         autoIncrement: true,
         primaryKey: true
     },
-    email: {
-        type: DataTypes.STRING,
-        unique: true,
-        allowNull: false
-    },
-    name: {
+    author: {
         type: DataTypes.STRING,
         allowNull: false
     },
-    password: {
+    content: {
         type: DataTypes.STRING,
         allowNull: false
     },
-    isVerified: {
+    fromGuest: {
         type: DataTypes.BOOLEAN,
-        defaultValue: false
+        allowNull: false
     }
 })
 
-
-module.exports = User;
+module.exports = Comment;
