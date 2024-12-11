@@ -1,13 +1,14 @@
 const User = require('../models/user');
 const Post = require('../models/post');
 const sequelize = require('sequelize');
+const {validationResult} = require('express-validator')
 
 exports.getPosts = async (req, res, next) => {
-    const { email } = req.body;
+    const { userId } = req.user;
     let posts;
     try {
-        const user = await User.findOne({where: {email: email}})
-        if(!email || !user.isVerified) {
+        const user = await User.findOne({where: {id: userId}});
+        if(!user.isVerified) {
             posts = await Post.findAll({where: {isPublic: true}})
             return res.status(200).json({message: 'posts downloaded successfull', posts: posts});
         } else if(user.isVerified) {
@@ -18,11 +19,14 @@ exports.getPosts = async (req, res, next) => {
         console.error(err);
         res.status(400).json({message: 'failed in getting posts'});
     }
-    
 }
 
 exports.createPost = async (req, res, next) => {
     const userId = req.user.id;
+    const errors = validationResult(req);
+    if(errors){
+        return res.status(400).json({message: 'validation errors', errors: errors});
+    }
     const {title, content, isPublic} = req.body;
     try {
         const user = await User.findOne({where: {id: userId}});
