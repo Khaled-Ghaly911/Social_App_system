@@ -24,13 +24,13 @@ router.post('/signup', [
         .isLength({ min: 8, max: 50 })
 ], authController.signup)
 
-router.post('/verifyOtp',[
+router.post('/verifyOtp', [
     body('email')
-    .trim()
-    .isEmail(),
+        .trim()
+        .isEmail(),
     body('otp')
-    .trim()
-    .isLength({min: 4, max: 4})
+        .trim()
+        .isLength({ min: 4, max: 4 })
 ], otpRateLimiter, authController.verifyOtp)
 
 router.post('/login', [

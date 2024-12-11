@@ -6,10 +6,10 @@ const { body } = require('express-validator')
 
 router.get('/comments', commentsController.getComments);
 
-router.post('/createComment',[
+router.post('/createComment', [
     body('content')
-    .trim()
-    .isLength({min: 5, max: 500})
+        .trim()
+        .isLength({ min: 5, max: 500 })
 ], commentsController.createComment);
 
 module.exports = router;

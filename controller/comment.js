@@ -7,8 +7,8 @@ const { validationResult } = require('express-validator')
 exports.getComments = async (req, res, next) => {
     const { postId } = req.body;
     try {
-        const comments = await Comment.findAll({ where: { postId: postId } });
-        if (!comments.size > 0) {
+        const comments = await Comment.findAll({ where: { postId: postId }});
+        if (comments.size === 0) {
             return res.status(200).json({ message: 'No Comments.', comments: comments });
         }
 
@@ -22,8 +22,8 @@ exports.getComments = async (req, res, next) => {
 exports.createComment = async (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const errors = validationResult(req);
-    if(errors){
-        return res.status(400).json({message: 'validation errors', errors: errors});
+    if (errors) {
+        return res.status(400).json({ message: 'validation errors', errors: errors });
     }
     const { guestEmail, content, postId, guestName } = req.body;
 
